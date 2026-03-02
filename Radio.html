@@ -1,0 +1,1067 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>P2P Web Radio Ultimate</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+    <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+    <style>
+        body { 
+            background: linear-gradient(-45deg, #020617, #0f172a, #064e3b, #020617);
+            background-size: 400% 400%;
+            animation: gradientBG 15s ease infinite;
+            color: #f8fafc; 
+            overflow-x: hidden;
+        }
+        @keyframes gradientBG {
+            0% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+            100% { background-position: 0% 50%; }
+        }
+        .pulse-ring { animation: pulse 2s infinite; }
+        @keyframes pulse {
+            0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7); }
+            70% { transform: scale(1); box-shadow: 0 0 0 15px rgba(16, 185, 129, 0); }
+            100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+        }
+        
+        /* Custom Sliders */
+        input[type=range] {
+            -webkit-appearance: none;
+            width: 100%;
+            background: transparent;
+        }
+        input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            height: 16px; width: 16px;
+            border-radius: 50%;
+            background: #10b981;
+            cursor: pointer;
+            margin-top: -6px;
+            box-shadow: 0 0 10px rgba(16, 185, 129, 0.5);
+        }
+        input[type=range]::-webkit-slider-runnable-track {
+            width: 100%; height: 4px;
+            cursor: pointer;
+            background: #334155;
+            border-radius: 2px;
+        }
+        
+        canvas { width: 100%; height: 60px; border-radius: 0.5rem; background: #000; }
+        .custom-scrollbar::-webkit-scrollbar { width: 6px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #334155; border-radius: 10px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #475569; }
+
+        /* Floating Emojis */
+        .floating-emoji {
+            position: fixed;
+            bottom: -50px;
+            font-size: 2rem;
+            pointer-events: none;
+            animation: floatUp 4s ease-in forwards;
+            z-index: 50;
+            filter: drop-shadow(0 0 10px rgba(255,255,255,0.2));
+        }
+        @keyframes floatUp {
+            0% { transform: translateY(0) scale(0.5) rotate(0deg); opacity: 0; }
+            10% { opacity: 1; transform: translateY(-10vh) scale(1.2) rotate(-10deg); }
+            50% { transform: translateY(-50vh) scale(1) rotate(10deg); }
+            100% { transform: translateY(-100vh) scale(0.8) rotate(-20deg); opacity: 0; }
+        }
+
+        /* Spinning Vinyl & Marquee */
+        .vinyl-spin { animation: spin 4s linear infinite; }
+        .vinyl-paused { animation-play-state: paused; }
+        @keyframes spin { 100% { transform: rotate(360deg); } }
+
+        .marquee-container { overflow: hidden; white-space: nowrap; position: relative; }
+        .marquee-text { display: inline-block; padding-left: 100%; animation: marquee 10s linear infinite; }
+        @keyframes marquee { 0% { transform: translate(0, 0); } 100% { transform: translate(-100%, 0); } }
+
+        /* Chat messages fade in */
+        .chat-msg { animation: fadeIn 0.3s ease-out; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
+    </style>
+</head>
+<body class="min-h-screen flex items-center justify-center p-4 antialiased">
+
+    <!-- VIEW: SETUP & DASHBOARD -->
+    <div id="setup-view" class="w-full max-w-md bg-slate-900/80 backdrop-blur-xl border border-slate-700 rounded-3xl shadow-2xl p-6 transition-all duration-300 relative overflow-hidden">
+        <div class="absolute -top-20 -right-20 w-40 h-40 bg-emerald-500 rounded-full mix-blend-multiply filter blur-3xl opacity-20"></div>
+        <div class="absolute -bottom-20 -left-20 w-40 h-40 bg-cyan-500 rounded-full mix-blend-multiply filter blur-3xl opacity-20"></div>
+        
+        <div class="text-center mb-8 relative z-10">
+            <div class="inline-flex items-center justify-center w-16 h-16 rounded-full bg-slate-800 border border-slate-600 mb-4 shadow-[0_0_20px_rgba(16,185,129,0.3)]">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+                </svg>
+            </div>
+            <h1 class="text-3xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-cyan-400">P2P Radio Ultimate</h1>
+            <p class="text-slate-400 text-sm mt-1">Serverless Zero-Latency Broadcasting</p>
+        </div>
+
+        <div class="space-y-6 relative z-10">
+            <div class="space-y-3">
+                <input type="text" id="station-name-input" placeholder="Name your station... (e.g. Synthwave Mix)" class="w-full bg-slate-950/50 border border-slate-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 font-medium placeholder-slate-600 transition">
+                <input type="text" id="dj-username-input" placeholder="Your DJ Name..." class="w-full bg-slate-950/50 border border-slate-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 font-medium placeholder-slate-600 transition">
+                <div class="p-4 rounded-xl border border-emerald-500/30 hover:border-emerald-400 bg-emerald-900/20 hover:bg-emerald-800/30 transition cursor-pointer group flex items-center gap-4" onclick="startBroadcaster()">
+                    <div class="w-10 h-10 rounded-full bg-emerald-500/20 flex items-center justify-center group-hover:bg-emerald-500/40 transition">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-emerald-400 group-hover:text-emerald-300" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clip-rule="evenodd" /></svg>
+                    </div>
+                    <div>
+                        <h3 class="font-bold text-lg text-emerald-50 transition">Start Broadcasting</h3>
+                        <p class="text-emerald-200/60 text-xs">Mix mic, music, effects, and chat.</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="relative flex py-2 items-center">
+                <div class="flex-grow border-t border-slate-700"></div>
+                <span class="flex-shrink-0 mx-4 text-cyan-500/50 text-xs font-bold tracking-widest uppercase">Live Stations</span>
+                <div class="flex-grow border-t border-slate-700"></div>
+            </div>
+
+            <div id="stations-list" class="space-y-3 max-h-48 overflow-y-auto pr-2 custom-scrollbar">
+                <div class="flex justify-center items-center py-6">
+                    <div class="w-5 h-5 border-2 border-cyan-500 border-t-transparent rounded-full animate-spin"></div>
+                    <span class="ml-3 text-slate-400 text-sm" id="dashboard-status">Scanning frequency...</span>
+                </div>
+            </div>
+
+            <details class="group mt-2">
+                <summary class="text-xs text-slate-500 hover:text-slate-300 cursor-pointer text-center list-none outline-none transition">Have a private code? Join manually.</summary>
+                <div class="mt-3 flex gap-2">
+                    <input type="text" id="join-id-input" placeholder="STATION-ID" class="w-full bg-slate-950/50 border border-slate-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-cyan-500 uppercase font-mono transition">
+                    <button onclick="startListenerManual()" class="bg-cyan-600 hover:bg-cyan-500 text-white font-bold py-2 px-4 rounded-lg text-sm transition shadow-[0_0_15px_rgba(8,145,178,0.4)]">Join</button>
+                </div>
+            </details>
+        </div>
+    </div>
+
+    <!-- VIEW: BROADCASTER (DJ) -->
+    <div id="dj-view" class="hidden w-full max-w-6xl bg-slate-900/80 backdrop-blur-xl border border-slate-700 rounded-3xl shadow-[0_0_50px_rgba(0,0,0,0.5)] p-6 md:p-8 flex flex-col h-[95vh]">
+        <!-- Header -->
+        <div class="flex flex-col md:flex-row justify-between items-center mb-6 gap-4 shrink-0">
+            <div class="flex items-center gap-4 bg-slate-950/50 pr-6 pl-2 py-2 rounded-full border border-slate-800">
+                <div class="bg-slate-800 rounded-full p-2 cursor-pointer hover:bg-slate-700 transition" onclick="copyStationId()" title="Copy ID">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
+                </div>
+                <div>
+                    <h2 id="dj-station-name" class="text-xl font-bold text-white leading-tight">My Station</h2>
+                    <div class="flex items-center gap-2">
+                        <span class="flex h-2 w-2 relative">
+                            <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                            <span class="relative inline-flex rounded-full h-2 w-2 bg-red-500"></span>
+                        </span>
+                        <span id="station-id-display" class="font-mono text-xs font-bold text-slate-400 tracking-widest">GENERATING...</span>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="flex gap-4 items-center">
+                <button onclick="endBroadcast()" class="text-xs bg-red-900/30 hover:bg-red-900/50 border border-red-500/30 text-red-400 px-4 py-2 rounded-full transition font-bold">END STREAM</button>
+                <div class="bg-cyan-950/40 px-5 py-2 rounded-full border border-cyan-900/50 flex items-center gap-3">
+                    <span class="text-cyan-400 text-xs font-bold uppercase tracking-wider">Listeners</span>
+                    <div class="bg-cyan-500/20 px-3 py-1 rounded-full">
+                        <span id="listener-count" class="font-mono font-bold text-cyan-300 text-lg">0</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-4 gap-6 flex-1 min-h-0">
+            
+            <!-- Music Deck & Chat (Col 1 & 2) -->
+            <div class="lg:col-span-2 flex flex-col gap-4 min-h-0">
+                <!-- Music Deck -->
+                <div class="bg-slate-950/50 border border-slate-800 rounded-2xl p-5 flex flex-col relative overflow-hidden shrink-0">
+                    <div class="absolute top-0 right-0 p-4 opacity-10 pointer-events-none">
+                        <svg class="w-32 h-32 vinyl-spin vinyl-paused" id="vinyl-icon" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <circle cx="50" cy="50" r="48" stroke="currentColor" stroke-width="4"/>
+                            <circle cx="50" cy="50" r="35" stroke="currentColor" stroke-width="1"/>
+                            <circle cx="50" cy="50" r="25" stroke="currentColor" stroke-width="1"/>
+                            <circle cx="50" cy="50" r="15" fill="currentColor"/>
+                        </svg>
+                    </div>
+
+                    <div class="flex justify-between items-center mb-4 relative z-10">
+                        <h3 class="text-emerald-400 font-bold text-sm tracking-wider flex items-center gap-2">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path d="M18 3a1 1 0 00-1.196-.98l-10 2A1 1 0 006 5v9.114A4.369 4.369 0 005 14c-1.657 0-3 .895-3 2s1.343 2 3 2 3-.895 3-2V7.82l8-1.6v5.894A4.37 4.37 0 0015 12c-1.657 0-3 .895-3 2s1.343 2 3 2 3-.895 3-2V3z" /></svg>
+                            MUSIC DECK
+                        </h3>
+                        <div class="flex gap-2">
+                            <label class="bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold py-1.5 px-3 rounded-lg cursor-pointer transition shadow-sm border border-slate-600">
+                                + Files <input type="file" id="music-files" accept="audio/*" multiple class="hidden" onchange="handleMusicUpload(event)">
+                            </label>
+                            <label class="bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold py-1.5 px-3 rounded-lg cursor-pointer transition shadow-sm border border-slate-600">
+                                + Folder <input type="file" id="music-folder" webkitdirectory multiple class="hidden" onchange="handleMusicUpload(event)">
+                            </label>
+                        </div>
+                    </div>
+
+                    <div id="playlist-container" class="hidden flex-1 flex flex-col h-[120px] bg-slate-900/80 rounded-xl border border-slate-800 p-2 mb-4 z-10">
+                        <div id="playlist-list" class="flex-1 overflow-y-auto custom-scrollbar text-sm space-y-1 pr-2"></div>
+                    </div>
+
+                    <audio id="dj-audio-player" controls class="w-full h-10 mt-auto z-10 outline-none rounded-lg" onplay="onDJPlay()" onpause="document.getElementById('vinyl-icon').classList.add('vinyl-paused')"></audio>
+                </div>
+
+                <!-- Live Chat -->
+                <div class="bg-slate-950/50 border border-slate-800 rounded-2xl flex flex-col flex-1 min-h-0 overflow-hidden">
+                    <div class="p-3 border-b border-slate-800 bg-slate-900/50">
+                        <h3 class="text-cyan-400 font-bold text-xs tracking-wider flex items-center gap-2">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" /></svg>
+                            LIVE CHAT (HOST)
+                        </h3>
+                    </div>
+                    <div id="dj-chat-messages" class="flex-1 p-3 overflow-y-auto custom-scrollbar space-y-2 text-sm flex flex-col">
+                        <div class="text-slate-500 text-xs text-center italic mt-auto">Chat room open. Say hi!</div>
+                    </div>
+                    <div class="p-3 bg-slate-900/80 border-t border-slate-800 flex gap-2">
+                        <input type="text" id="dj-chat-input" placeholder="Type message..." class="flex-1 bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-cyan-500 transition" onkeypress="handleChatEnter(event, 'dj')">
+                        <button onclick="sendChatMessage('dj')" class="bg-cyan-600 hover:bg-cyan-500 text-white px-4 rounded-lg text-sm font-bold transition">Send</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Mixer & FX (Col 3 & 4) -->
+            <div class="lg:col-span-2 flex flex-col gap-4 min-h-0">
+                
+                <!-- Mixer Panel -->
+                <div class="bg-slate-950/50 border border-slate-800 rounded-2xl p-5">
+                    <h3 class="text-purple-400 font-bold text-sm tracking-wider flex items-center gap-2 mb-4">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clip-rule="evenodd" /></svg>
+                        MASTER MIXER
+                    </h3>
+                    
+                    <div class="space-y-5">
+                        <!-- Music Vol -->
+                        <div>
+                            <div class="flex justify-between text-xs text-slate-400 mb-1 font-bold uppercase">
+                                <span>Music Level</span>
+                                <span id="music-vol-label">100%</span>
+                            </div>
+                            <input type="range" id="music-vol" min="0" max="1.5" step="0.05" value="1" oninput="updateMixer()">
+                        </div>
+                        
+                        <!-- Mic Vol -->
+                        <div>
+                            <div class="flex justify-between text-xs text-slate-400 mb-1 font-bold uppercase">
+                                <span>Mic Level</span>
+                                <span id="mic-vol-label">100%</span>
+                            </div>
+                            <input type="range" id="mic-vol" min="0" max="2" step="0.05" value="1" oninput="updateMixer()">
+                        </div>
+
+                        <!-- FX Toggles -->
+                        <div class="grid grid-cols-2 gap-4 pt-4 border-t border-slate-800">
+                            <!-- Bass Boost -->
+                            <div class="flex items-center justify-between bg-slate-900 p-3 rounded-xl border border-slate-800">
+                                <span class="text-xs font-bold text-slate-300">BASS BOOST</span>
+                                <label class="relative inline-flex items-center cursor-pointer">
+                                  <input type="checkbox" id="bass-boost" class="sr-only peer" onchange="updateMixer()">
+                                  <div class="w-9 h-5 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-emerald-500"></div>
+                                </label>
+                            </div>
+                            <!-- Echo FX -->
+                            <div class="flex items-center justify-between bg-slate-900 p-3 rounded-xl border border-slate-800">
+                                <span class="text-xs font-bold text-slate-300">MIC ECHO</span>
+                                <label class="relative inline-flex items-center cursor-pointer">
+                                  <input type="checkbox" id="mic-echo" class="sr-only peer" onchange="updateMixer()">
+                                  <div class="w-9 h-5 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-purple-500"></div>
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Synth Soundboard -->
+                <div class="bg-slate-950/50 border border-slate-800 rounded-2xl p-4">
+                    <h3 class="text-pink-400 font-bold text-xs tracking-wider flex items-center gap-2 mb-3">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"><path d="M2 10a8 8 0 018-8v8h8a8 8 0 11-16 0z" /><path d="M12 2.252A8.014 8.014 0 0117.748 8H12V2.252z" /></svg>
+                        LIVE SOUNDBOARD
+                    </h3>
+                    <div class="grid grid-cols-3 gap-2">
+                        <button onclick="playSynthFX('airhorn')" class="bg-slate-800 hover:bg-slate-700 active:bg-pink-600 border border-slate-700 rounded-xl py-3 text-xs font-bold text-slate-300 hover:text-white transition shadow-sm flex flex-col items-center gap-1">
+                            <span class="text-lg">📯</span> Airhorn
+                        </button>
+                        <button onclick="playSynthFX('laser')" class="bg-slate-800 hover:bg-slate-700 active:bg-cyan-600 border border-slate-700 rounded-xl py-3 text-xs font-bold text-slate-300 hover:text-white transition shadow-sm flex flex-col items-center gap-1">
+                            <span class="text-lg">⚡</span> Laser
+                        </button>
+                        <button onclick="playSynthFX('subdrop')" class="bg-slate-800 hover:bg-slate-700 active:bg-emerald-600 border border-slate-700 rounded-xl py-3 text-xs font-bold text-slate-300 hover:text-white transition shadow-sm flex flex-col items-center gap-1">
+                            <span class="text-lg">💣</span> Sub Drop
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Controls -->
+                <div class="flex gap-2">
+                    <button id="mute-mic-btn" onclick="toggleMute()" class="flex-1 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-xl py-4 flex justify-center items-center transition shadow-lg">
+                        <svg id="mic-icon-on" xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" /></svg>
+                        <svg id="mic-icon-off" xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-red-500 hidden" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" clip-rule="evenodd" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2" /></svg>
+                    </button>
+                    
+                    <button id="deafen-btn" onclick="toggleDeafen()" class="flex-1 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-xl py-4 flex justify-center items-center transition relative group shadow-lg">
+                        <svg id="deafen-icon-off" xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" /></svg>
+                        <svg id="deafen-icon-on" xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-orange-500 hidden" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 5.636a9 9 0 010 12.728m0 0l-2.829-2.829m2.829 2.829L21 21M15.536 8.464a5 5 0 010 7.072m0 0l-2.829-2.829m-4.243 2.829a4.978 4.978 0 01-1.414-2.83m-1.414 5.658a9 9 0 01-2.167-9.238m7.824 2.167a1 1 0 011.414 0L10 14.586H8.414l-1.414-1.414-4.707 4.707A1 1 0 011 17v-4a1 1 0 011-1h1.586l4.707-4.707C8.923 6.663 10 7.109 10 8v5.586l1.414-1.414z" /></svg>
+                        <span class="absolute -top-10 bg-slate-900 text-xs px-3 py-1.5 rounded-lg opacity-0 group-hover:opacity-100 transition pointer-events-none whitespace-nowrap shadow-md border border-slate-700">Monitor Mute</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Master Output Visualizer -->
+        <div class="bg-slate-950/80 border border-slate-800 rounded-2xl p-4 relative overflow-hidden mt-6 shrink-0 shadow-inner">
+            <span class="absolute top-3 left-4 text-[10px] text-slate-500 uppercase tracking-widest font-bold z-10">Master Output</span>
+            <canvas id="dj-visualizer" class="w-full h-16 opacity-80 mt-4"></canvas>
+        </div>
+        
+    </div>
+
+    <!-- VIEW: LISTENER -->
+    <div id="listener-view" class="hidden w-full max-w-lg bg-slate-900/80 backdrop-blur-xl border border-slate-700 rounded-3xl shadow-2xl overflow-hidden flex flex-col h-[90vh] md:h-auto md:max-h-[90vh]">
+        <!-- Top Info -->
+        <div class="p-8 pb-4 text-center relative shrink-0">
+            <div class="absolute -top-10 -right-10 w-32 h-32 bg-cyan-500 rounded-full mix-blend-multiply filter blur-3xl opacity-20"></div>
+
+            <h2 id="listener-station-display" class="text-3xl font-extrabold text-white mb-1 tracking-tight drop-shadow-lg">Tuning in...</h2>
+            <p id="listener-status-text" class="text-slate-400 font-medium">Establishing secure peer connection...</p>
+            
+            <!-- Now Playing Marquee -->
+            <div id="now-playing-container" class="mt-4 bg-slate-950/50 border border-slate-800 rounded-full py-1.5 px-4 hidden flex items-center gap-2">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-emerald-400 shrink-0 animate-pulse" viewBox="0 0 20 20" fill="currentColor"><path d="M18 3a1 1 0 00-1.196-.98l-10 2A1 1 0 006 5v9.114A4.369 4.369 0 005 14c-1.657 0-3 .895-3 2s1.343 2 3 2 3-.895 3-2V7.82l8-1.6v5.894A4.37 4.37 0 0015 12c-1.657 0-3 .895-3 2s1.343 2 3 2 3-.895 3-2V3z" /></svg>
+                <div class="marquee-container w-full text-xs text-emerald-200 font-medium">
+                    <span id="now-playing-text" class="marquee-text">Waiting for DJ...</span>
+                </div>
+            </div>
+            
+            <div class="relative w-32 h-32 mx-auto mt-6 mb-6 flex items-center justify-center">
+                <div id="listener-status-icon" class="absolute inset-0 rounded-full bg-slate-800 border-4 border-slate-700 flex items-center justify-center transition-all duration-500 shadow-inner">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-10 w-10 text-slate-500 animate-pulse" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
+                    </svg>
+                </div>
+                <!-- Reaction Overlay (local feedback) -->
+                <div id="listener-reaction-overlay" class="absolute inset-0 pointer-events-none z-20"></div>
+            </div>
+
+            <div id="buffer-bar" class="w-3/4 mx-auto bg-slate-800 rounded-full h-1.5 overflow-hidden">
+                <div class="bg-cyan-500 h-1.5 rounded-full w-full animate-[pulse_1s_ease-in-out_infinite] origin-left scale-x-0 transition-transform duration-1000" style="transform: scaleX(1)"></div>
+            </div>
+
+            <div id="listener-visualizer-container" class="hidden w-full bg-slate-950/50 rounded-xl p-2 border border-slate-800 shadow-inner">
+                <canvas id="listener-visualizer" class="h-16"></canvas>
+            </div>
+        </div>
+
+        <!-- Chat Area (Listener) -->
+        <div id="listener-chat-container" class="hidden flex-1 flex flex-col min-h-[150px] border-t border-slate-800 bg-slate-900/50">
+            <div id="listener-chat-messages" class="flex-1 p-4 overflow-y-auto custom-scrollbar space-y-3 text-sm flex flex-col">
+                <div class="text-slate-500 text-xs text-center italic mt-auto">Connected to chat.</div>
+            </div>
+            <div class="p-3 bg-slate-950/80 border-t border-slate-800 flex gap-2 shrink-0">
+                <input type="text" id="listener-chat-input" placeholder="Chat with everyone..." class="flex-1 bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-cyan-500 transition" onkeypress="handleChatEnter(event, 'listener')">
+                <button onclick="sendChatMessage('listener')" class="bg-cyan-600 hover:bg-cyan-500 text-white px-4 rounded-lg text-sm font-bold transition">Send</button>
+            </div>
+        </div>
+
+        <!-- Controls (Listener) -->
+        <div class="p-4 bg-slate-950/80 border-t border-slate-800 shrink-0">
+            <!-- Interactive Reactions -->
+            <div id="reactions-bar" class="hidden flex justify-center gap-4 mb-4">
+                <button onclick="sendReaction('🔥')" class="text-2xl hover:scale-125 transition transform hover:-translate-y-2 bg-slate-800 w-12 h-12 rounded-full border border-slate-700 shadow-lg">🔥</button>
+                <button onclick="sendReaction('💖')" class="text-2xl hover:scale-125 transition transform hover:-translate-y-2 bg-slate-800 w-12 h-12 rounded-full border border-slate-700 shadow-lg">💖</button>
+                <button onclick="sendReaction('🎵')" class="text-2xl hover:scale-125 transition transform hover:-translate-y-2 bg-slate-800 w-12 h-12 rounded-full border border-slate-700 shadow-lg">🎵</button>
+                <button onclick="sendReaction('🚀')" class="text-2xl hover:scale-125 transition transform hover:-translate-y-2 bg-slate-800 w-12 h-12 rounded-full border border-slate-700 shadow-lg">🚀</button>
+            </div>
+
+            <audio id="audio-player" class="hidden" autoplay></audio>
+            
+            <div class="flex gap-3">
+                <button id="listener-deafen-btn" onclick="toggleListenerDeafen()" class="bg-slate-800 hover:bg-slate-700 border border-slate-600 text-white font-medium py-3 px-6 rounded-xl transition flex items-center justify-center gap-2 shadow-md">
+                    <svg id="listener-vol-icon" xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" /></svg>
+                </button>
+                <button onclick="location.reload()" class="flex-1 bg-red-900/30 hover:bg-red-900/50 border border-red-500/30 text-red-400 font-bold py-3 rounded-xl transition shadow-md">
+                    DISCONNECT
+                </button>
+            </div>
+        </div>
+    </div>
+
+<script>
+    // --- GLOBAL STATE ---
+    let peer = null;
+    let localStream = null;
+    let myMicStream = null;
+    let myUsername = "Anonymous";
+    
+    // Audio Nodes
+    let audioCtx = null;
+    let micGainNode = null;
+    let musicGainNode = null;
+    let bassFilter = null;
+    let delayNode = null;
+    let feedbackNode = null;
+    let monitorGainNode = null; 
+    let masterCompressor = null; // Added: Anti-clip dynamics compressor
+    let destinationNode = null;
+
+    let isMicMuted = false;
+    let isDeafened = false; 
+    let activeConnections = {}; 
+    let listenerDataConn = null; 
+    let listenerCount = 0;
+    
+    let isBroadcasting = false;
+    let myStationId = null;
+    let myStationName = "";
+    
+    let playlist = [];
+    let currentTrackIndex = 0;
+
+    // --- DASHBOARD LOGIC (MQTT) ---
+    const MQTT_BROKER = 'wss://broker.emqx.io:8084/mqtt';
+    const MQTT_TOPIC_PREFIX = 'p2pradio-ultimate/v1/stations/';
+    let mqttClient = null;
+    let activeStations = {};
+
+    function initDashboard() {
+        const dashboardStatus = document.getElementById('dashboard-status');
+        mqttClient = mqtt.connect(MQTT_BROKER);
+
+        mqttClient.on('connect', () => {
+            dashboardStatus.innerText = 'Network sync complete.';
+            dashboardStatus.parentElement.querySelector('div').classList.replace('border-cyan-500', 'border-emerald-500');
+            dashboardStatus.parentElement.querySelector('div').classList.remove('animate-spin');
+            mqttClient.subscribe(MQTT_TOPIC_PREFIX + '#');
+            renderDashboard();
+        });
+
+        mqttClient.on('message', (topic, message) => {
+            const peerId = topic.replace(MQTT_TOPIC_PREFIX, '');
+            const payload = message.toString();
+
+            if (payload === '') delete activeStations[peerId];
+            else {
+                try {
+                    const data = JSON.parse(payload);
+                    if (Date.now() - data.timestamp < 2 * 60 * 60 * 1000) activeStations[peerId] = data;
+                    else delete activeStations[peerId];
+                } catch(e) {}
+            }
+            renderDashboard();
+        });
+    }
+
+    function renderDashboard() {
+        const list = document.getElementById('stations-list');
+        list.innerHTML = '';
+        const stationsArray = Object.values(activeStations);
+
+        if (stationsArray.length === 0) {
+            list.innerHTML = '<p class="text-slate-500 text-sm text-center py-4">Dead air. Start the first broadcast!</p>';
+            return;
+        }
+
+        stationsArray.sort((a, b) => b.listeners - a.listeners).forEach(data => {
+            if (isBroadcasting && data.peerId === myStationId) return;
+
+            const div = document.createElement('div');
+            div.className = 'bg-slate-900/80 p-3 rounded-xl flex justify-between items-center border border-slate-700 hover:border-cyan-500/50 hover:bg-slate-800 cursor-pointer transition group shadow-sm';
+            div.onclick = () => startListener(data.peerId, data.name);
+            
+            div.innerHTML = `
+                <div class="overflow-hidden pr-2">
+                    <h4 class="text-white font-bold truncate group-hover:text-cyan-400 transition">${escapeHTML(data.name)}</h4>
+                    <div class="flex items-center gap-2 mt-1">
+                        <span class="flex h-2 w-2 relative">
+                          <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                          <span class="relative inline-flex rounded-full h-2 w-2 bg-red-500"></span>
+                        </span>
+                        <p class="text-[10px] text-slate-400 uppercase tracking-wider">${data.listeners} Listening • Host: ${escapeHTML(data.host || 'DJ')}</p>
+                    </div>
+                </div>
+                <button class="bg-cyan-900/30 group-hover:bg-cyan-600 text-cyan-400 group-hover:text-white border border-cyan-500/30 px-3 py-1.5 rounded-lg text-xs font-bold transition whitespace-nowrap">
+                    TUNE IN
+                </button>
+            `;
+            list.appendChild(div);
+        });
+    }
+
+    function publishStationState() {
+        if (!isBroadcasting || !mqttClient || !myStationId) return;
+        const payload = JSON.stringify({ 
+            name: myStationName, 
+            host: myUsername,
+            peerId: myStationId, 
+            listeners: listenerCount, 
+            timestamp: Date.now() 
+        });
+        mqttClient.publish(MQTT_TOPIC_PREFIX + myStationId, payload, { retain: true });
+    }
+
+    function removeStationState() {
+        if (mqttClient && myStationId) mqttClient.publish(MQTT_TOPIC_PREFIX + myStationId, '', { retain: true });
+    }
+    window.addEventListener('beforeunload', removeStationState);
+    initDashboard();
+
+    // --- UI HELPERS ---
+    function switchView(viewId) {
+        ['setup-view', 'dj-view', 'listener-view'].forEach(id => document.getElementById(id).classList.add('hidden'));
+        document.getElementById(viewId).classList.remove('hidden');
+    }
+
+    async function copyStationId() {
+        const id = document.getElementById('station-id-display').innerText;
+        navigator.clipboard.writeText(id).catch(() => {});
+        const btn = document.querySelector('[title="Copy ID"]');
+        const oldHtml = btn.innerHTML;
+        btn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-white" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd" /></svg>`;
+        setTimeout(() => btn.innerHTML = oldHtml, 1500);
+    }
+    function escapeHTML(str) { return str.replace(/[&<>'"]/g, tag => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[tag])); }
+
+    // --- PLAYLIST LOGIC ---
+    function handleMusicUpload(e) {
+        if (!e.target.files || e.target.files.length === 0) return;
+
+        const validAudioExtensions = /\.(mp3|wav|ogg|flac|aac|m4a)$/i;
+        const newFiles = Array.from(e.target.files).filter(f => {
+            return (f.type && f.type.startsWith('audio/')) || f.name.match(validAudioExtensions);
+        });
+
+        if (newFiles.length > 0) {
+            const wasEmpty = playlist.length === 0;
+            playlist = playlist.concat(newFiles);
+            renderPlaylist();
+            if (wasEmpty) playTrack(0);
+        } else {
+            console.log("No valid audio files found in selection.");
+        }
+        
+        e.target.value = '';
+    }
+
+    function playTrack(index) {
+        if (index < 0 || index >= playlist.length) return;
+        currentTrackIndex = index;
+        const file = playlist[index];
+        const djPlayer = document.getElementById('dj-audio-player');
+        
+        djPlayer.src = URL.createObjectURL(file);
+        djPlayer.play();
+        
+        document.getElementById('playlist-container').classList.remove('hidden');
+        renderPlaylist();
+        
+        broadcastToListeners({ type: 'meta', track: file.name });
+    }
+
+    function onDJPlay() {
+        document.getElementById('vinyl-icon').classList.remove('vinyl-paused');
+        if (playlist.length > 0) {
+            broadcastToListeners({ type: 'meta', track: playlist[currentTrackIndex].name });
+        }
+    }
+
+    function renderPlaylist() {
+        const list = document.getElementById('playlist-list');
+        list.innerHTML = '';
+        playlist.forEach((file, i) => {
+            const el = document.createElement('div');
+            const isActive = i === currentTrackIndex;
+            el.className = `truncate cursor-pointer transition px-3 py-2 rounded-lg text-xs font-medium ${isActive ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'text-slate-400 hover:bg-slate-800 border border-transparent'}`;
+            el.innerHTML = isActive ? `<span class="animate-pulse mr-1">▶</span> ${file.name}` : `${i + 1}. ${file.name}`;
+            el.onclick = () => playTrack(i);
+            list.appendChild(el);
+        });
+    }
+
+    // --- AUDIO MIXER & SYNTH FX (DJ) ---
+    function updateMixer() {
+        if (!musicGainNode || !micGainNode || !bassFilter || !feedbackNode) return;
+
+        const musicVol = document.getElementById('music-vol').value;
+        const micVol = document.getElementById('mic-vol').value;
+        const bassBoost = document.getElementById('bass-boost').checked;
+        const echoEnabled = document.getElementById('mic-echo').checked;
+
+        musicGainNode.gain.value = musicVol;
+        micGainNode.gain.value = micVol;
+        bassFilter.gain.value = bassBoost ? 15 : 0; 
+        feedbackNode.gain.value = echoEnabled ? 0.4 : 0; 
+
+        document.getElementById('music-vol-label').innerText = `${Math.round(musicVol * 100)}%`;
+        document.getElementById('mic-vol-label').innerText = `${Math.round(micVol * 100)}%`;
+    }
+
+    function playSynthFX(type) {
+        if(!audioCtx || !masterCompressor) return;
+        const now = audioCtx.currentTime;
+
+        if (type === 'laser') {
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.type = 'sawtooth';
+            osc.frequency.setValueAtTime(880, now);
+            osc.frequency.exponentialRampToValueAtTime(110, now + 0.3);
+            
+            gain.gain.setValueAtTime(0.3, now);
+            gain.gain.exponentialRampToValueAtTime(0.01, now + 0.3);
+            
+            osc.connect(gain);
+            // Route through compressor to prevent clipping
+            gain.connect(masterCompressor); 
+            
+            osc.start(now);
+            osc.stop(now + 0.3);
+        } 
+        else if (type === 'subdrop') {
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(150, now);
+            osc.frequency.exponentialRampToValueAtTime(0.01, now + 2); 
+            
+            gain.gain.setValueAtTime(1, now);
+            gain.gain.exponentialRampToValueAtTime(0.01, now + 2);
+            
+            osc.connect(gain);
+            gain.connect(masterCompressor);
+            
+            osc.start(now);
+            osc.stop(now + 2);
+        }
+        else if (type === 'airhorn') {
+            const freqs = [350, 360, 370]; 
+            freqs.forEach(f => {
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                osc.type = 'sawtooth';
+                osc.frequency.value = f;
+                
+                gain.gain.setValueAtTime(0, now);
+                gain.gain.linearRampToValueAtTime(0.2, now + 0.05);
+                gain.gain.setValueAtTime(0.2, now + 0.3);
+                gain.gain.linearRampToValueAtTime(0, now + 0.4);
+
+                osc.connect(gain);
+                gain.connect(masterCompressor);
+                
+                osc.start(now);
+                osc.stop(now + 0.5);
+            });
+        }
+    }
+
+
+    // --- CHAT LOGIC ---
+    function handleChatEnter(e, role) {
+        if (e.key === 'Enter') sendChatMessage(role);
+    }
+
+    function sendChatMessage(role) {
+        const inputId = role === 'dj' ? 'dj-chat-input' : 'listener-chat-input';
+        const input = document.getElementById(inputId);
+        const text = input.value.trim();
+        if (!text) return;
+
+        const payload = { type: 'chat', sender: myUsername, text: text };
+        
+        displayChatMessage(payload.sender, payload.text, role);
+        input.value = '';
+
+        if (role === 'dj') {
+            broadcastToListeners(payload);
+        } else if (role === 'listener' && listenerDataConn && listenerDataConn.open) {
+            listenerDataConn.send(payload);
+        }
+    }
+
+    function displayChatMessage(sender, text, role) {
+        const containerId = role === 'dj' ? 'dj-chat-messages' : 'listener-chat-messages';
+        const container = document.getElementById(containerId);
+        
+        const div = document.createElement('div');
+        div.className = 'chat-msg flex flex-col mb-1';
+        
+        const isMe = sender === myUsername;
+        const nameColor = isMe ? 'text-cyan-400' : 'text-emerald-400';
+        const nameDisplay = isMe ? 'You' : escapeHTML(sender);
+
+        div.innerHTML = `
+            <span class="${nameColor} font-bold text-[10px] uppercase tracking-wider">${nameDisplay}</span>
+            <span class="text-slate-200">${escapeHTML(text)}</span>
+        `;
+        
+        container.appendChild(div);
+        container.scrollTop = container.scrollHeight;
+    }
+
+    function broadcastToListeners(dataObj) {
+        Object.values(activeConnections).forEach(connObj => {
+            if (connObj.data && connObj.data.open) {
+                connObj.data.send(dataObj);
+            }
+        });
+    }
+
+    function handleDataFromPeer(data) {
+        if (data.type === 'reaction') {
+            showFloatingEmoji(data.emoji);
+            if (isBroadcasting) broadcastToListeners(data); 
+        } else if (data.type === 'chat') {
+            displayChatMessage(data.sender, data.text, isBroadcasting ? 'dj' : 'listener');
+            if (isBroadcasting) broadcastToListeners(data); 
+        } else if (data.type === 'meta' && !isBroadcasting) {
+            document.getElementById('now-playing-container').classList.remove('hidden');
+            document.getElementById('now-playing-text').innerText = data.track;
+        }
+    }
+
+
+    // --- BROADCASTER (DJ) LOGIC ---
+    async function startBroadcaster() {
+        const nameInput = document.getElementById('station-name-input').value.trim();
+        const userInp = document.getElementById('dj-username-input').value.trim();
+        
+        myStationName = nameInput || `Radio ${Math.floor(100 + Math.random() * 900)}`;
+        myUsername = userInp || "DJ Host";
+        myStationId = 'STN-' + Math.random().toString(36).substr(2, 6).toUpperCase();
+
+        switchView('dj-view');
+        document.getElementById('dj-station-name').innerText = myStationName;
+
+        try {
+            const micStream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true }, video: false });
+            myMicStream = micStream;
+
+            audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            destinationNode = audioCtx.createMediaStreamDestination();
+            
+            // Nodes Creation
+            micGainNode = audioCtx.createGain();
+            musicGainNode = audioCtx.createGain();
+            monitorGainNode = audioCtx.createGain();
+            bassFilter = audioCtx.createBiquadFilter();
+            delayNode = audioCtx.createDelay(1.0); 
+            feedbackNode = audioCtx.createGain();
+            
+            // ANTI-CLIPPING COMPRESSOR (Ensures audio never distorts for listeners)
+            masterCompressor = audioCtx.createDynamicsCompressor();
+            masterCompressor.threshold.value = -3; // Start compressing at -3dBFS
+            masterCompressor.knee.value = 10;
+            masterCompressor.ratio.value = 12; // Hard compression to act as limiter
+            masterCompressor.attack.value = 0.005; // Fast attack
+            masterCompressor.release.value = 0.1;
+            
+            bassFilter.type = "lowshelf";
+            bassFilter.frequency.value = 150; 
+            bassFilter.gain.value = 0;
+
+            delayNode.delayTime.value = 0.25; 
+            feedbackNode.gain.value = 0; 
+            
+            // Graph Connections - All point to masterCompressor now instead of destination Node directly
+            const micSource = audioCtx.createMediaStreamSource(micStream);
+            micSource.connect(micGainNode);
+            
+            micGainNode.connect(delayNode);
+            delayNode.connect(feedbackNode);
+            feedbackNode.connect(delayNode);
+
+            micGainNode.connect(masterCompressor);
+            delayNode.connect(masterCompressor);
+            
+            const djPlayer = document.getElementById('dj-audio-player');
+            const musicSource = audioCtx.createMediaElementSource(djPlayer);
+            musicSource.connect(musicGainNode);
+            musicGainNode.connect(bassFilter);
+            
+            bassFilter.connect(masterCompressor);
+            
+            // Compressor connects to the WebRTC destination & Local Monitor
+            masterCompressor.connect(destinationNode);
+            masterCompressor.connect(monitorGainNode);
+            monitorGainNode.connect(audioCtx.destination); 
+
+            updateMixer(); 
+
+            djPlayer.addEventListener('ended', () => {
+                if (currentTrackIndex < playlist.length - 1) playTrack(currentTrackIndex + 1);
+            });
+
+            localStream = destinationNode.stream;
+            setupVisualizer(localStream, 'dj-visualizer', '#10b981', true);
+            
+            peer = new Peer(myStationId);
+
+            peer.on('open', (id) => {
+                isBroadcasting = true;
+                document.getElementById('station-id-display').innerText = id;
+                publishStationState();
+                setInterval(publishStationState, 30000);
+            });
+
+            peer.on('connection', (conn) => {
+                conn.on('data', handleDataFromPeer);
+
+                conn.on('open', () => {
+                    // Send High-Fidelity Audio settings through WebRTC's SDP via an sdpTransform
+                    // This forces Opus to use Stereo at 320kbps rather than low quality voice mono
+                    const callOptions = {
+                        sdpTransform: function(sdp) {
+                            const opusRegex = /a=rtpmap:(\d+)\s+opus\/48000\/2/i;
+                            const match = sdp.match(opusRegex);
+                            if (match) {
+                                const pt = match[1];
+                                const fmtpRegex = new RegExp(`a=fmtp:${pt}.*`, 'i');
+                                const fmtpMatch = sdp.match(fmtpRegex);
+                                if (fmtpMatch) {
+                                    sdp = sdp.replace(fmtpRegex, `${fmtpMatch[0]}; stereo=1; sprop-stereo=1; maxaveragebitrate=320000; cbr=1`);
+                                }
+                            }
+                            return sdp;
+                        }
+                    };
+
+                    const call = peer.call(conn.peer, localStream, callOptions);
+                    activeConnections[conn.peer] = { data: conn, call: call };
+                    updateListenerCount();
+                    
+                    if(playlist.length > 0 && !document.getElementById('dj-audio-player').paused) {
+                        conn.send({ type: 'meta', track: playlist[currentTrackIndex].name });
+                    }
+                });
+                
+                conn.on('close', () => {
+                    delete activeConnections[conn.peer];
+                    updateListenerCount();
+                });
+            });
+
+        } catch (err) {
+            alert("Mic access required to broadcast! " + err.message);
+            location.reload();
+        }
+    }
+
+    function toggleMute() {
+        if (!myMicStream) return;
+        isMicMuted = !isMicMuted;
+        myMicStream.getAudioTracks()[0].enabled = !isMicMuted;
+        
+        const btn = document.getElementById('mute-mic-btn');
+        document.getElementById('mic-icon-on').classList.toggle('hidden', isMicMuted);
+        document.getElementById('mic-icon-off').classList.toggle('hidden', !isMicMuted);
+        
+        if (isMicMuted) {
+            btn.classList.add('bg-red-900/30', 'border-red-500/50');
+            btn.classList.remove('bg-slate-800', 'border-slate-700');
+        } else {
+            btn.classList.remove('bg-red-900/30', 'border-red-500/50');
+            btn.classList.add('bg-slate-800', 'border-slate-700');
+        }
+    }
+
+    function toggleDeafen() {
+        if (!monitorGainNode) return;
+        isDeafened = !isDeafened;
+        monitorGainNode.gain.value = isDeafened ? 0 : 1;
+        
+        const btn = document.getElementById('deafen-btn');
+        document.getElementById('deafen-icon-off').classList.toggle('hidden', isDeafened);
+        document.getElementById('deafen-icon-on').classList.toggle('hidden', !isDeafened);
+
+        if (isDeafened) {
+            btn.classList.add('bg-orange-900/30', 'border-orange-500/50');
+            btn.classList.remove('bg-slate-800', 'border-slate-700');
+        } else {
+            btn.classList.remove('bg-orange-900/30', 'border-orange-500/50');
+            btn.classList.add('bg-slate-800', 'border-slate-700');
+        }
+    }
+
+    function endBroadcast() {
+        removeStationState();
+        setTimeout(() => location.reload(), 300); 
+    }
+
+    function updateListenerCount() {
+        listenerCount = Object.keys(activeConnections).length;
+        document.getElementById('listener-count').innerText = listenerCount;
+        publishStationState();
+    }
+
+    // --- LISTENER LOGIC ---
+    function startListenerManual() {
+        let stationId = document.getElementById('join-id-input').value.trim().toUpperCase();
+        if (stationId) startListener(stationId, "Private Station");
+    }
+
+    function startListener(stationId, stationName) {
+        const userInp = document.getElementById('dj-username-input').value.trim();
+        myUsername = userInp || "Listener_" + Math.floor(Math.random() * 1000);
+
+        if (mqttClient) mqttClient.end(); 
+
+        switchView('listener-view');
+        document.getElementById('listener-station-display').innerText = stationName;
+
+        peer = new Peer();
+
+        peer.on('open', (id) => {
+            document.getElementById('listener-status-text').innerText = "Connecting to Host...";
+            listenerDataConn = peer.connect(stationId);
+            
+            listenerDataConn.on('open', () => {
+                document.getElementById('listener-status-text').innerText = "Buffering Audio Stream...";
+                listenerDataConn.send({ type: 'chat', sender: 'System', text: `${myUsername} joined.`});
+            });
+            listenerDataConn.on('data', handleDataFromPeer);
+            listenerDataConn.on('close', () => {
+                setListenerStateOff();
+                document.getElementById('listener-status-text').innerText = "Broadcast Ended.";
+            });
+        });
+
+        peer.on('call', (call) => {
+            call.answer(); 
+            call.on('stream', (remoteStream) => {
+                const audioPlayer = document.getElementById('audio-player');
+                audioPlayer.srcObject = remoteStream;
+                
+                audioPlayer.play().then(() => {
+                    setListenerStateLive();
+                    setupVisualizer(remoteStream, 'listener-visualizer', '#06b6d4', false); 
+                }).catch(e => {
+                    document.getElementById('listener-status-text').innerText = "Tap icon to start audio";
+                    document.getElementById('listener-status-icon').innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" class="h-10 w-10 text-cyan-400 cursor-pointer hover:scale-110 transition" viewBox="0 0 20 20" fill="currentColor" onclick="document.getElementById('audio-player').play(); setListenerStateLive();"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clip-rule="evenodd" /></svg>`;
+                });
+            });
+        });
+
+        peer.on('error', (err) => {
+            setListenerStateOff();
+            document.getElementById('listener-status-text').innerText = "Signal Lost.";
+        });
+    }
+
+    function toggleListenerDeafen() {
+        const player = document.getElementById('audio-player');
+        player.muted = !player.muted;
+        const btn = document.getElementById('listener-deafen-btn');
+        const icon = document.getElementById('listener-vol-icon');
+
+        if (player.muted) {
+            btn.classList.add('bg-orange-900/40', 'border-orange-500/50', 'text-orange-400');
+            btn.classList.remove('bg-slate-800', 'border-slate-600', 'text-white');
+            icon.innerHTML = `<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 5.636a9 9 0 010 12.728m0 0l-2.829-2.829m2.829 2.829L21 21M15.536 8.464a5 5 0 010 7.072m0 0l-2.829-2.829m-4.243 2.829a4.978 4.978 0 01-1.414-2.83m-1.414 5.658a9 9 0 01-2.167-9.238m7.824 2.167a1 1 0 011.414 0L10 14.586H8.414l-1.414-1.414-4.707 4.707A1 1 0 011 17v-4a1 1 0 011-1h1.586l4.707-4.707C8.923 6.663 10 7.109 10 8v5.586l1.414-1.414z" />`;
+        } else {
+            btn.classList.remove('bg-orange-900/40', 'border-orange-500/50', 'text-orange-400');
+            btn.classList.add('bg-slate-800', 'border-slate-600', 'text-white');
+            icon.innerHTML = `<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />`;
+        }
+    }
+
+    function setListenerStateLive() {
+        document.getElementById('listener-status-text').innerText = "Live On Air";
+        document.getElementById('listener-status-text').classList.replace('text-slate-400', 'text-cyan-400');
+        document.getElementById('buffer-bar').classList.add('hidden');
+        document.getElementById('listener-visualizer-container').classList.remove('hidden');
+        document.getElementById('reactions-bar').classList.remove('hidden');
+        document.getElementById('listener-chat-container').classList.remove('hidden');
+        
+        const iconContainer = document.getElementById('listener-status-icon');
+        iconContainer.classList.replace('bg-slate-800', 'bg-cyan-950');
+        iconContainer.classList.replace('border-slate-700', 'border-cyan-500');
+        iconContainer.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" class="h-10 w-10 text-cyan-400 pulse-ring rounded-full" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" /></svg>`;
+    }
+
+    function setListenerStateOff() {
+        document.getElementById('buffer-bar').classList.add('hidden');
+        document.getElementById('listener-visualizer-container').classList.add('hidden');
+        document.getElementById('reactions-bar').classList.add('hidden');
+        document.getElementById('listener-chat-container').classList.add('hidden');
+        document.getElementById('now-playing-container').classList.add('hidden');
+        const iconContainer = document.getElementById('listener-status-icon');
+        iconContainer.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" class="h-10 w-10 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 5.636a9 9 0 010 12.728m0 0l-2.829-2.829m2.829 2.829L21 21M15.536 8.464a5 5 0 010 7.072m0 0l-2.829-2.829m-4.243 2.829a4.978 4.978 0 01-1.414-2.83m-1.414 5.658a9 9 0 01-2.167-9.238m7.824 2.167a1 1 0 011.414 0L10 14.586H8.414l-1.414-1.414-4.707 4.707A1 1 0 011 17v-4a1 1 0 011-1h1.586l4.707-4.707C8.923 6.663 10 7.109 10 8v5.586l1.414-1.414z" /></svg>`;
+    }
+
+    // --- EMOJIS / REACTIONS ---
+    function sendReaction(emoji) {
+        showFloatingEmoji(emoji);
+        if (listenerDataConn && listenerDataConn.open) {
+            listenerDataConn.send({ type: 'reaction', emoji: emoji });
+        }
+    }
+
+    function showFloatingEmoji(emoji) {
+        const el = document.createElement('div');
+        el.className = 'floating-emoji';
+        el.innerText = emoji;
+        
+        const leftPos = Math.random() * 80 + 10; 
+        el.style.left = `${leftPos}%`;
+        
+        document.body.appendChild(el);
+        setTimeout(() => el.remove(), 4000);
+    }
+
+    // --- MIRRORED AUDIO VISUALIZER ---
+    function setupVisualizer(stream, canvasId, colorHex, isMirrored) {
+        const ctxAudio = new (window.AudioContext || window.webkitAudioContext)();
+        const analyzer = ctxAudio.createAnalyser();
+        const source = ctxAudio.createMediaStreamSource(stream);
+        source.connect(analyzer);
+        
+        analyzer.fftSize = 256;
+        const bufferLength = analyzer.frequencyBinCount;
+        const dataArray = new Uint8Array(bufferLength);
+        
+        const canvas = document.getElementById(canvasId);
+        const ctx = canvas.getContext('2d');
+        
+        function draw() {
+            requestAnimationFrame(draw);
+            analyzer.getByteFrequencyData(dataArray);
+            
+            canvas.width = canvas.offsetWidth * 2;
+            canvas.height = canvas.offsetHeight * 2;
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            const gradient = ctx.createLinearGradient(0, canvas.height, 0, 0);
+            gradient.addColorStop(0, colorHex);
+            gradient.addColorStop(1, '#ffffff');
+
+            const barWidth = (canvas.width / bufferLength) * (isMirrored ? 1.5 : 2.5);
+            const center = canvas.width / 2;
+
+            for(let i = 0; i < bufferLength; i++) {
+                const barHeight = (dataArray[i] / 255) * canvas.height * 0.8; 
+                
+                ctx.fillStyle = gradient;
+                ctx.shadowBlur = 10;
+                ctx.shadowColor = colorHex;
+
+                if (isMirrored) {
+                    const xRight = center + (i * (barWidth + 2));
+                    ctx.fillRect(xRight, canvas.height - barHeight, barWidth, barHeight);
+                    const xLeft = center - (i * (barWidth + 2)) - barWidth;
+                    ctx.fillRect(xLeft, canvas.height - barHeight, barWidth, barHeight);
+                } else {
+                    const x = i * (barWidth + 2);
+                    ctx.fillRect(x, canvas.height - barHeight, barWidth, barHeight);
+                }
+            }
+        }
+        draw();
+    }
+</script>
+</body>
+</html>
