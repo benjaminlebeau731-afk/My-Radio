@@ -1237,9 +1237,26 @@
                     activeConnections[conn.peer] = { data: conn, call: call };
                     updateListenerCount();
                     
+                    // Determine what is currently playing to send to the new listener
                     let trackName = "Live Mix";
-                    if(playlist.length > 0 && !document.getElementById('dj-audio-player').paused) trackName = playlist[currentTrackIndex].name;
+                    if (djYtPlayer && typeof djYtPlayer.getVideoData === 'function') {
+                        const vidData = djYtPlayer.getVideoData();
+                        if (vidData && vidData.title) trackName = vidData.title;
+                    } else if (playlist.length > 0 && !document.getElementById('dj-audio-player').paused) {
+                        trackName = playlist[currentTrackIndex].name;
+                    }
+
                     conn.send({ type: 'meta', track: trackName, color: myStationColor, hype: globalHypeCount });
+
+                    // Send current YouTube state to the newly connected listener immediately
+                    if (djYtPlayer && typeof djYtPlayer.getPlayerState === 'function' && djYtPlayer.getPlayerState() === YT.PlayerState.PLAYING) {
+                        try {
+                            const vidObj = djYtPlayer.getVideoData();
+                            if (vidObj && vidObj.video_id) {
+                                conn.send({ type: 'yt_cmd', action: 'play', videoId: vidObj.video_id, time: djYtPlayer.getCurrentTime() });
+                            }
+                        } catch(e) {}
+                    }
                 });
                 
                 conn.on('close', () => {
@@ -1247,6 +1264,23 @@
                     updateListenerCount();
                 });
             });
+
+            // Periodically sync YouTube time with all listeners to ensure nobody drifts
+            setInterval(() => {
+                if (isBroadcasting && djYtPlayer && typeof djYtPlayer.getPlayerState === 'function' && djYtPlayer.getPlayerState() === YT.PlayerState.PLAYING) {
+                    try {
+                        const vidObj = djYtPlayer.getVideoData();
+                        if(vidObj && vidObj.video_id) {
+                            broadcastToListeners({ 
+                                type: 'yt_cmd', 
+                                action: 'sync', 
+                                videoId: vidObj.video_id, 
+                                time: djYtPlayer.getCurrentTime() 
+                            });
+                        }
+                    } catch(e) {}
+                }
+            }, 4000);
 
         } catch (err) {
             alert("Mic access required to broadcast! " + err.message);
