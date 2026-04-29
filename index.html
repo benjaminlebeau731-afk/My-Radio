@@ -1241,6 +1241,10 @@
         const val = document.getElementById('listener-vol-slider').value;
         player.volume = val;
         if(val > 0 && player.muted) toggleListenerDeafen();
+        
+        if (listenerYtPlayer && typeof listenerYtPlayer.setVolume === 'function') {
+            listenerYtPlayer.setVolume(val * 100);
+        }
     }
 
     function setListenerStateLive() {
