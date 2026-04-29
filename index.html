@@ -1057,30 +1057,42 @@
             fireConfetti();
         } else if (data.type === 'yt_cmd' && !isBroadcasting) {
             // LISTENER SIDE: Execute YouTube sync commands from the DJ
-            if (data.action === 'play') {
+            if (data.action === 'play' || data.action === 'sync') {
                 if(!listenerYtPlayer) {
                     listenerYtPlayer = new YT.Player('yt-player-listener', {
-                        height: '0', width: '0', videoId: data.videoId,
-                        playerVars: { 'autoplay': 1, 'controls': 0 },
+                        height: '200', width: '200', videoId: data.videoId,
+                        playerVars: { 'autoplay': 1, 'controls': 0, 'playsinline': 1 },
                         events: {
                             'onReady': (event) => { 
-                                event.target.playVideo(); 
+                                event.target.unMute();
                                 event.target.setVolume(document.getElementById('listener-vol-slider').value * 100);
+                                if (data.time) event.target.seekTo(data.time);
+                                event.target.playVideo(); 
                             }
                         }
                     });
                 } else {
-                    if (listenerYtPlayer.getVideoData && listenerYtPlayer.getVideoData().video_id !== data.videoId) {
-                         listenerYtPlayer.loadVideoById(data.videoId);
-                    } else {
-                         listenerYtPlayer.playVideo();
-                         if(data.time !== undefined) {
-                             const current = listenerYtPlayer.getCurrentTime();
-                             if(Math.abs(current - data.time) > 2) {
-                                 listenerYtPlayer.seekTo(data.time); // Keep synced
+                    try {
+                        const currentData = listenerYtPlayer.getVideoData ? listenerYtPlayer.getVideoData() : {};
+                        
+                        // Always ensure unmuted when DJ plays
+                        if(typeof listenerYtPlayer.unMute === 'function') listenerYtPlayer.unMute();
+                        if(typeof listenerYtPlayer.setVolume === 'function') listenerYtPlayer.setVolume(document.getElementById('listener-vol-slider').value * 100);
+
+                        if (currentData.video_id !== data.videoId) {
+                             listenerYtPlayer.loadVideoById(data.videoId, data.time || 0);
+                        } else {
+                             if (data.action === 'play' && listenerYtPlayer.getPlayerState() !== YT.PlayerState.PLAYING) {
+                                 listenerYtPlayer.playVideo();
                              }
-                         }
-                    }
+                             if(data.time !== undefined && listenerYtPlayer.getCurrentTime) {
+                                 const current = listenerYtPlayer.getCurrentTime();
+                                 if(Math.abs(current - data.time) > 2.5) {
+                                     listenerYtPlayer.seekTo(data.time); // Keep synced
+                                 }
+                             }
+                        }
+                    } catch(e) {}
                 }
             } else if (data.action === 'pause') {
                 if(listenerYtPlayer && typeof listenerYtPlayer.pauseVideo === 'function') {
